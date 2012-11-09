@@ -185,6 +185,10 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
 
     log = ulcf->logs->elts;
 
+    if (log == NULL) {
+	return NGX_ERROR;
+    }
+
     for (l = 0; l < ulcf->logs->nelts; l++) {
 
 #if defined nginx_version && nginx_version >= 7018
