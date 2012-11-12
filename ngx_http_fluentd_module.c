@@ -183,6 +183,10 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
         tag.len = sizeof("nginx") - 1;
     }
 
+    if (ulcf->logs == NULL) {
+        return NGX_ERROR;
+    }
+
     log = ulcf->logs->elts;
 
     if (log == NULL) {
