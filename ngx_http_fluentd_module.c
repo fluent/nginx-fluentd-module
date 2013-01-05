@@ -58,7 +58,7 @@ typedef struct {
 } ngx_http_log_main_conf_t;
 
 typedef struct {
-    ngx_fluentd_addr_t                 peer_addr;
+    ngx_fluentd_addr_t         peer_addr;
     ngx_udp_connection_t      *udp_connection;
 } ngx_udp_endpoint_t;
 
@@ -116,24 +116,24 @@ static ngx_command_t  ngx_http_fluentd_commands[] = {
 
 static ngx_http_module_t  ngx_http_fluentd_module_ctx = {
     NULL,                                  /* preconfiguration */
-    ngx_http_fluentd_init,                  /* postconfiguration */
+    ngx_http_fluentd_init,                 /* postconfiguration */
 
-    ngx_http_fluentd_create_main_conf,      /* create main configuration */
+    ngx_http_fluentd_create_main_conf,     /* create main configuration */
     NULL,                                  /* init main configuration */
 
     NULL,                                  /* create server configuration */
     NULL,                                  /* merge server configuration */
 
-    ngx_http_fluentd_create_loc_conf,       /* create location configration */
-    ngx_http_fluentd_merge_loc_conf         /* merge location configration */
+    ngx_http_fluentd_create_loc_conf,      /* create location configration */
+    ngx_http_fluentd_merge_loc_conf        /* merge location configration */
 };
 
 extern ngx_module_t  ngx_http_log_module;
 
 ngx_module_t  ngx_http_fluentd_module = {
     NGX_MODULE_V1,
-    &ngx_http_fluentd_module_ctx,           /* module context */
-    ngx_http_fluentd_commands,              /* module directives */
+    &ngx_http_fluentd_module_ctx,          /* module context */
+    ngx_http_fluentd_commands,             /* module directives */
     NGX_HTTP_MODULE,                       /* module type */
     NULL,                                  /* init master */
     NULL,                                  /* init module */
@@ -152,26 +152,26 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
     size_t                    len;
     ngx_uint_t                i, l;
     ngx_str_t                 tag;
-    ngx_http_fluentd_t        *log;
+    ngx_http_fluentd_t       *log;
     ngx_http_log_op_t        *op;
-    ngx_http_fluentd_conf_t   *ulcf;
+    ngx_http_fluentd_conf_t  *flcf;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "http fluentd handler");
 
-    ulcf = ngx_http_get_module_loc_conf(r, ngx_http_fluentd_module);
+    flcf = ngx_http_get_module_loc_conf(r, ngx_http_fluentd_module);
 
-    if(ulcf->off) {
+    if(flcf->off || flcf->logs == NULL) {
         return NGX_OK;
     }
 
-    if(ulcf->tag != NULL)
+    if(flcf->tag != NULL)
     {
-        if(ulcf->tag->lengths == NULL) {
-            tag = ulcf->tag->value;
+        if(flcf->tag->lengths == NULL) {
+            tag = flcf->tag->value;
         }
         else{
-            if (ngx_http_script_run(r, &tag, ulcf->tag->lengths->elts, 0, ulcf->tag->values->elts)
+            if (ngx_http_script_run(r, &tag, flcf->tag->lengths->elts, 0, flcf->tag->values->elts)
                 == NULL)
             {
                 return NGX_ERROR;
@@ -183,19 +183,15 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
         tag.len = sizeof("nginx") - 1;
     }
 
-    log = ulcf->logs->elts;
+    log = flcf->logs->elts;
 
-    if (log == NULL) {
-	return NGX_ERROR;
-    }
-
-    for (l = 0; l < ulcf->logs->nelts; l++) {
+    for (l = 0; l < flcf->logs->nelts; l++) {
 
 #if defined nginx_version && nginx_version >= 7018
         ngx_http_script_flush_no_cacheable_variables(r, log[l].format->flushes);
 #endif
 
-        len = 1;
+        len = 0;
         op = log[l].format->ops->elts;
         for (i = 0; i < log[l].format->ops->nelts; i++) {
             if (op[i].len == 0) {
@@ -206,7 +202,7 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
             }
         }
 
-        len += 1 + sizeof("\"tag\":") + 1 + 1 + tag.len + 1 + 1 + 1; /* '{tag: "value", ' */
+        len += 1 + sizeof("\"tag\":") - 1 + 1 + tag.len + 1 + 1 + 1 + 1; /* '{"tag":"value", }' */
 
 #if defined nginx_version && nginx_version >= 7003
         line = ngx_pnalloc(r->pool, len);
@@ -381,19 +377,19 @@ ngx_http_fluentd_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
 static ngx_udp_endpoint_t *
 ngx_http_fluentd_add_endpoint(ngx_conf_t *cf, ngx_fluentd_addr_t *peer_addr)
 {
-    ngx_http_fluentd_main_conf_t    *umcf;
+    ngx_http_fluentd_main_conf_t   *fmcf;
     ngx_udp_endpoint_t             *endpoint;
 
-    umcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_fluentd_module);
+    fmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_fluentd_module);
 
-    if(umcf->endpoints == NULL) {
-        umcf->endpoints = ngx_array_create(cf->pool, 2, sizeof(ngx_udp_endpoint_t));
-        if (umcf->endpoints == NULL) {
+    if(fmcf->endpoints == NULL) {
+        fmcf->endpoints = ngx_array_create(cf->pool, 2, sizeof(ngx_udp_endpoint_t));
+        if (fmcf->endpoints == NULL) {
             return NULL;
         }
     }
 
-    endpoint = ngx_array_push(umcf->endpoints);
+    endpoint = ngx_array_push(fmcf->endpoints);
     if (endpoint == NULL) {
         return NULL;
     }
@@ -406,11 +402,11 @@ ngx_http_fluentd_add_endpoint(ngx_conf_t *cf, ngx_fluentd_addr_t *peer_addr)
 static char *
 ngx_http_fluentd_set_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_fluentd_conf_t      *ulcf = conf;
+    ngx_http_fluentd_conf_t     *flcf = conf;
 
     ngx_uint_t                   i;
     ngx_str_t                   *value, name;
-    ngx_http_fluentd_t           *log;
+    ngx_http_fluentd_t          *log;
     ngx_http_log_fmt_t          *fmt;
     ngx_http_log_main_conf_t    *lmcf;
     ngx_url_t                    u;
@@ -418,13 +414,13 @@ ngx_http_fluentd_set_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     value = cf->args->elts;
 
     if (ngx_strcmp(value[1].data, "off") == 0) {
-        ulcf->off = 1;
+        flcf->off = 1;
         return NGX_CONF_OK;
     }
 
-    if (ulcf->logs == NULL) {
-        ulcf->logs = ngx_array_create(cf->pool, 2, sizeof(ngx_http_fluentd_t));
-        if (ulcf->logs == NULL) {
+    if (flcf->logs == NULL) {
+        flcf->logs = ngx_array_create(cf->pool, 2, sizeof(ngx_http_fluentd_t));
+        if (flcf->logs == NULL) {
             return NGX_CONF_ERROR;
         }
     }
@@ -437,7 +433,7 @@ ngx_http_fluentd_set_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    log = ngx_array_push(ulcf->logs);
+    log = ngx_array_push(flcf->logs);
     if (log == NULL) {
         return NGX_CONF_ERROR;
     }
@@ -495,9 +491,9 @@ done:
 static char *
 ngx_http_fluentd_set_tag(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_int_t                   n;
-    ngx_str_t                  *value;
-    ngx_http_script_compile_t   sc;
+    ngx_int_t                    n;
+    ngx_str_t                   *value;
+    ngx_http_script_compile_t    sc;
     ngx_http_log_tag_template_t **field, *h;
 
     field = (ngx_http_log_tag_template_t**) (((u_char*)conf) + cmd->offset);
@@ -547,15 +543,15 @@ ngx_http_fluentd_init(ngx_conf_t *cf)
     ngx_int_t                     rc;
     ngx_uint_t                    i;
     ngx_http_core_main_conf_t    *cmcf;
-    ngx_http_fluentd_main_conf_t  *umcf;
+    ngx_http_fluentd_main_conf_t *fmcf;
     ngx_http_handler_pt          *h;
     ngx_udp_endpoint_t           *e;
 
-    umcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_fluentd_module);
+    fmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_fluentd_module);
 
-    if(umcf->endpoints != NULL) {
-        e = umcf->endpoints->elts;
-        for(i = 0;i < umcf->endpoints->nelts;i++) {
+    if(fmcf->endpoints != NULL) {
+        e = fmcf->endpoints->elts;
+        for(i = 0;i < fmcf->endpoints->nelts;i++) {
             rc = ngx_fluentd_init_endpoint(cf, e + i);
 
             if(rc != NGX_OK) {
