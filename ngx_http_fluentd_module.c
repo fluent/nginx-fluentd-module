@@ -69,6 +69,7 @@ typedef struct {
 
 typedef struct {
     ngx_array_t                *endpoints;
+    ngx_uint_t                  collector_max;
 } ngx_http_fluentd_main_conf_t;
 
 typedef struct {
@@ -83,6 +84,7 @@ static void ngx_fluentd_cleanup(void *data);
 static ngx_int_t ngx_http_fluentd_send(ngx_udp_endpoint_t *l, u_char *buf, size_t len);
 
 static void *ngx_http_fluentd_create_main_conf(ngx_conf_t *cf);
+static char *ngx_http_fluentd_init_main_conf(ngx_conf_t *cf, void *conf);
 static void *ngx_http_fluentd_create_loc_conf(ngx_conf_t *cf);
 static char *ngx_http_fluentd_merge_loc_conf(ngx_conf_t *cf, void *parent,
     void *child);
@@ -103,6 +105,13 @@ static ngx_command_t  ngx_http_fluentd_commands[] = {
       0,
       NULL },
 
+    { ngx_string("fluentd_collector_max"),
+      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_num_slot,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      offsetof(ngx_http_fluentd_main_conf_t, collector_max),
+      NULL },
+
     { ngx_string("fluentd_tag"),
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
       ngx_http_fluentd_set_tag,
@@ -119,7 +128,7 @@ static ngx_http_module_t  ngx_http_fluentd_module_ctx = {
     ngx_http_fluentd_init,                 /* postconfiguration */
 
     ngx_http_fluentd_create_main_conf,     /* create main configuration */
-    NULL,                                  /* init main configuration */
+    ngx_http_fluentd_init_main_conf,       /* init main configuration */
 
     NULL,                                  /* create server configuration */
     NULL,                                  /* merge server configuration */
@@ -331,14 +340,28 @@ ngx_http_fluentd_send(ngx_udp_endpoint_t *l, u_char *buf, size_t len)
 static void *
 ngx_http_fluentd_create_main_conf(ngx_conf_t *cf)
 {
-    ngx_http_fluentd_main_conf_t  *conf;
+    ngx_http_fluentd_main_conf_t  *fmcf;
 
-    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_fluentd_main_conf_t));
-    if (conf == NULL) {
-        return NGX_CONF_ERROR;
+    fmcf = ngx_pcalloc(cf->pool, sizeof(ngx_http_fluentd_main_conf_t));
+    if (fmcf == NULL) {
+        return NULL;
     }
 
-    return conf;
+    fmcf->collector_max = NGX_CONF_UNSET_UINT;
+
+    return fmcf;
+}
+
+static char *
+ngx_http_fluentd_init_main_conf(ngx_conf_t *cf, void *conf)
+{
+    ngx_http_fluentd_main_conf_t *fmcf = conf;
+
+    if (fmcf->collector_max == NGX_CONF_UNSET_UINT) {
+        fmcf->collector_max = 16;
+    }
+
+    return NGX_CONF_OK;
 }
 
 static void *
@@ -348,7 +371,7 @@ ngx_http_fluentd_create_loc_conf(ngx_conf_t *cf)
 
     conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_fluentd_conf_t));
     if (conf == NULL) {
-        return NGX_CONF_ERROR;
+        return NULL;
     }
 
     return conf;
@@ -382,11 +405,17 @@ ngx_http_fluentd_add_endpoint(ngx_conf_t *cf, ngx_fluentd_addr_t *peer_addr)
 
     fmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_fluentd_module);
 
-    if(fmcf->endpoints == NULL) {
-        fmcf->endpoints = ngx_array_create(cf->pool, 2, sizeof(ngx_udp_endpoint_t));
+    if (fmcf->endpoints == NULL) {
+        fmcf->endpoints = ngx_array_create(cf->pool, fmcf->collector_max, sizeof(ngx_udp_endpoint_t));
         if (fmcf->endpoints == NULL) {
             return NULL;
         }
+    }
+
+    if (fmcf->endpoints->nelts > fmcf->collector_max) {
+        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                           "fluentd collector count out of range, increase the fluentd_collector_max");
+        return NULL;
     }
 
     endpoint = ngx_array_push(fmcf->endpoints);
@@ -404,18 +433,25 @@ ngx_http_fluentd_set_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_http_fluentd_conf_t     *flcf = conf;
 
-    ngx_uint_t                   i;
-    ngx_str_t                   *value, name;
-    ngx_http_fluentd_t          *log;
-    ngx_http_log_fmt_t          *fmt;
-    ngx_http_log_main_conf_t    *lmcf;
-    ngx_url_t                    u;
+    ngx_uint_t                      i;
+    ngx_str_t                      *value, name;
+    ngx_http_fluentd_t             *log;
+    ngx_http_log_fmt_t             *fmt;
+    ngx_http_log_main_conf_t       *lmcf;
+    ngx_http_fluentd_main_conf_t   *fmcf;
+    ngx_url_t                       u;
 
     value = cf->args->elts;
 
     if (ngx_strcmp(value[1].data, "off") == 0) {
         flcf->off = 1;
         return NGX_CONF_OK;
+    }
+
+    fmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_fluentd_module);
+
+    if (fmcf->collector_max == NGX_CONF_UNSET_UINT) {
+        fmcf->collector_max = 16;
     }
 
     if (flcf->logs == NULL) {
