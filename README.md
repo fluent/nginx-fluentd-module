@@ -34,6 +34,15 @@ Log format is important and required because output is in JSON format.
 
     description: Set tag for fluentd match directive
 
+   fluentd_collector_max
+    syntax: *fluentd_collector_max count
+
+    default: 16
+
+    context: *main
+
+    description: Set count of fluentd collector
+
    access_fluentd
     syntax: *access_fluentd address:port log_format | off*
 
