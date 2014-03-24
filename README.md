@@ -57,4 +57,4 @@ Log format is important and required because output is in JSON format.
     
     
 [1]: http://fluentd.org
-[2]: https://github.com/parolkar/fluentd-plugin-udp
+[2]: https://github.com/parolkar/fluent-plugin-udp
