@@ -188,8 +188,7 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
         }
     }
     else {
-        tag.data = (u_char*)"nginx";
-        tag.len = sizeof("nginx") - 1;
+        ngx_str_set(&tag, "nginx");
     }
 
     log = flcf->logs->elts;
@@ -500,8 +499,7 @@ ngx_http_fluentd_set_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             lmcf->combined_used = 1;
         }
     } else {
-        name.len = sizeof("combined") - 1;
-        name.data = (u_char *) "combined";
+        ngx_str_set(&name, "combined");
         lmcf->combined_used = 1;
     }
 
