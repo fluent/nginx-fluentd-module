@@ -231,7 +231,7 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
             p = op[i].run(r, p, &op[i]);
         }
 
-	*p++ = '}';
+        *p++ = '}';
 
         ngx_http_fluentd_send(log[l].endpoint, line, p - line);
     }
