@@ -210,7 +210,9 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
             }
         }
 
-        len += 1 + sizeof("\"tag\":") - 1 + 1 + tag.len + 1 + 1 + 1 + 1; /* '{"tag":"value", }' */
+        if (tag.len > 0) {
+            len += 1 + sizeof("\"tag\":") - 1 + 1 + tag.len + 1 + 1 + 1 + 1; /* '{"tag":"value", }' */
+        }
 
 #if defined nginx_version && nginx_version >= 7003
         line = ngx_pnalloc(r->pool, len);
@@ -221,16 +223,22 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
             return NGX_ERROR;
         }
 
-        /*
-         * JSON Style message
-         */
-        p = ngx_sprintf(line, "{\"tag\":\"%V\", ", &tag);
+        if (tag.len > 0) {
+            /*
+             * JSON Style message
+             */
+            p = ngx_sprintf(line, "{\"tag\":\"%V\", ", &tag);
+        } else {
+            p = line;
+        }
 
         for (i = 0; i < log[l].format->ops->nelts; i++) {
             p = op[i].run(r, p, &op[i]);
         }
 
-        *p++ = '}';
+        if (tag.len > 0) {
+            *p++ = '}';
+        }
 
         ngx_http_fluentd_send(log[l].endpoint, line, p - line);
     }
