@@ -157,9 +157,9 @@ ngx_module_t  ngx_http_fluentd_module = {
 ngx_int_t
 ngx_http_fluentd_handler(ngx_http_request_t *r)
 {
-    u_char                   *line, *p, *escaped_line;
+    u_char                   *line, *p, *escaped_line, *src, *dst;
     size_t                    len;
-    ngx_uint_t                i, l, n, k;
+    ngx_uint_t                i, l, n;
     ngx_str_t                 tag;
     ngx_http_fluentd_t       *log;
     ngx_http_log_op_t        *op;
@@ -240,39 +240,28 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
             *p++ = '}';
 
             n = 0;
-            k = p - line;
-            while (k) {
-                if (line[k-1] == '\\') {
+            for (src = line; src < p; src++) {
+                if (*src == '\\') {
                     n++;
                 }
-                k--;
             }
             if (n == 0) {
                 ngx_http_fluentd_send(log[l].endpoint, line, p - line);
             } else {
                 len += n;
-                k = n;
 #if defined nginx_version && nginx_version >= 7003
                 escaped_line = ngx_pnalloc(r->pool, len);
 #else
                 escaped_line = ngx_palloc(r->pool, len);
 #endif
 
-                i = p - line + n;
-                while (!(i<1)) {
-                    escaped_line[i] = line[i-n];
-                    if (line[i-n] == '\\') {
-                        i--;
-                        escaped_line[i] = '\\';
-                        if (n > 0) {
-                            n--;
-                        }
+                for (src = line, dst = escaped_line; src < p; src++, dst++) {
+                    if ((*dst = *src) == '\\') {
+                        *++dst = '\\';
                     }
-                    i--;
-                    escaped_line[i] = line[i-n];
                 }
 
-                ngx_http_fluentd_send(log[l].endpoint, escaped_line, p - line + k);
+                ngx_http_fluentd_send(log[l].endpoint, escaped_line, p - line + n);
             }
         } else {
             ngx_http_fluentd_send(log[l].endpoint, line, p - line);
