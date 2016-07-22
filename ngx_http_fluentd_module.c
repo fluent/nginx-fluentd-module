@@ -59,7 +59,7 @@ typedef struct {
 
 typedef struct {
     ngx_fluentd_addr_t         peer_addr;
-    ngx_udp_connection_t      *udp_connection;
+    ngx_resolver_connection_t  *udp_connection;
 } ngx_udp_endpoint_t;
 
 typedef struct {
@@ -78,7 +78,7 @@ typedef struct {
     ngx_http_log_tag_template_t *tag;
 } ngx_http_fluentd_conf_t;
 
-ngx_int_t ngx_udp_connect(ngx_udp_connection_t *uc);
+ngx_int_t ngx_udp_connect(ngx_resolver_connection_t *uc);
 
 static void ngx_fluentd_cleanup(void *data);
 static ngx_int_t ngx_http_fluentd_send(ngx_udp_endpoint_t *l, u_char *buf, size_t len);
@@ -239,8 +239,8 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
 }
 
 static ngx_int_t ngx_fluentd_init_endpoint(ngx_conf_t *cf, ngx_udp_endpoint_t *endpoint) {
-    ngx_pool_cleanup_t    *cln;
-    ngx_udp_connection_t  *uc;
+    ngx_pool_cleanup_t        *cln;
+    ngx_resolver_connection_t *uc;
 
     cln = ngx_pool_cleanup_add(cf->pool, 0);
     if(cln == NULL) {
@@ -250,7 +250,7 @@ static ngx_int_t ngx_fluentd_init_endpoint(ngx_conf_t *cf, ngx_udp_endpoint_t *e
     cln->handler = ngx_fluentd_cleanup;
     cln->data = endpoint;
 
-    uc = ngx_calloc(sizeof(ngx_udp_connection_t), cf->log);
+    uc = ngx_calloc(sizeof(ngx_resolver_connection_t), cf->log);
     if (uc == NULL) {
         return NGX_ERROR;
     }
@@ -283,8 +283,8 @@ ngx_fluentd_cleanup(void *data)
                    "cleanup fluentd");
 
     if(e->udp_connection) {
-        if(e->udp_connection->connection) {
-            ngx_close_connection(e->udp_connection->connection);
+        if(e->udp_connection->udp) {
+            ngx_close_connection(e->udp_connection->udp);
         }
 
         ngx_free(e->udp_connection);
@@ -298,27 +298,27 @@ static void ngx_http_fluentd_dummy_handler(ngx_event_t *ev)
 static ngx_int_t
 ngx_http_fluentd_send(ngx_udp_endpoint_t *l, u_char *buf, size_t len)
 {
-    ssize_t                n;
-    ngx_udp_connection_t  *uc;
+    ssize_t                    n;
+    ngx_resolver_connection_t  *uc;
 
     uc = l->udp_connection;
 
-    if (uc->connection == NULL) {
+    if (uc->udp == NULL) {
         if(ngx_udp_connect(uc) != NGX_OK) {
-            if(uc->connection != NULL) {
-                ngx_free_connection(uc->connection);
-                uc->connection = NULL;
+            if(uc->udp != NULL) {
+                ngx_free_connection(uc->udp);
+                uc->udp = NULL;
             }
 
             return NGX_ERROR;
         }
 
-        uc->connection->data = l;
-        uc->connection->read->handler = ngx_http_fluentd_dummy_handler;
-        uc->connection->read->resolver = 0;
+        uc->udp->data = l;
+        uc->udp->read->handler = ngx_http_fluentd_dummy_handler;
+        uc->udp->read->resolver = 0;
     }
 
-    n = ngx_send(uc->connection, buf, len);
+    n = ngx_send(uc->udp, buf, len);
 
     if (n == -1) {
         return NGX_ERROR;
