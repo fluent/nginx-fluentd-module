@@ -1,10 +1,10 @@
 # Nginx Fluentd Module 
 
-##Installation
+## Installation
 
     $ ./configure --add-module=/path/to/nginx-fluentd-module
 
-##Synopsis
+## Synopsis
 
     server {
     
