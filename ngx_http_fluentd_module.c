@@ -157,9 +157,9 @@ ngx_module_t  ngx_http_fluentd_module = {
 ngx_int_t
 ngx_http_fluentd_handler(ngx_http_request_t *r)
 {
-    u_char                   *line, *p;
+    u_char                   *line, *p, *escaped_line, *src, *dst;
     size_t                    len;
-    ngx_uint_t                i, l;
+    ngx_uint_t                i, l, n;
     ngx_str_t                 tag;
     ngx_http_fluentd_t       *log;
     ngx_http_log_op_t        *op;
@@ -210,7 +210,9 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
             }
         }
 
-        len += 1 + sizeof("\"tag\":") - 1 + 1 + tag.len + 1 + 1 + 1 + 1; /* '{"tag":"value", }' */
+        if (tag.len > 0) {
+            len += 1 + sizeof("\"tag\":") - 1 + 1 + tag.len + 1 + 1 + 1 + 1; /* '{"tag":"value", }' */
+        }
 
 #if defined nginx_version && nginx_version >= 7003
         line = ngx_pnalloc(r->pool, len);
@@ -221,18 +223,49 @@ ngx_http_fluentd_handler(ngx_http_request_t *r)
             return NGX_ERROR;
         }
 
-        /*
-         * JSON Style message
-         */
-        p = ngx_sprintf(line, "{\"tag\":\"%V\", ", &tag);
+        if (tag.len > 0) {
+            /*
+             * JSON Style message
+             */
+            p = ngx_sprintf(line, "{\"tag\":\"%V\", ", &tag);
+        } else {
+            p = line;
+        }
 
         for (i = 0; i < log[l].format->ops->nelts; i++) {
             p = op[i].run(r, p, &op[i]);
         }
 
-        *p++ = '}';
+        if (tag.len > 0) {
+            *p++ = '}';
 
-        ngx_http_fluentd_send(log[l].endpoint, line, p - line);
+            n = 0;
+            for (src = line; src < p; src++) {
+                if (*src == '\\') {
+                    n++;
+                }
+            }
+            if (n == 0) {
+                ngx_http_fluentd_send(log[l].endpoint, line, p - line);
+            } else {
+                len += n;
+#if defined nginx_version && nginx_version >= 7003
+                escaped_line = ngx_pnalloc(r->pool, len);
+#else
+                escaped_line = ngx_palloc(r->pool, len);
+#endif
+
+                for (src = line, dst = escaped_line; src < p; src++, dst++) {
+                    if ((*dst = *src) == '\\') {
+                        *++dst = '\\';
+                    }
+                }
+
+                ngx_http_fluentd_send(log[l].endpoint, escaped_line, p - line + n);
+            }
+        } else {
+            ngx_http_fluentd_send(log[l].endpoint, line, p - line);
+        }
     }
 
     return NGX_OK;
